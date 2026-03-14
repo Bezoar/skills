@@ -205,3 +205,37 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# Claude environment and local configs
+.claude/settings.local.json
+CLAUDE.local.md
+*.env
+.env.local
+.env.*.local
+.mcp.json # if machine-specific
+
+# OS and Editor files
+.DS_Store
+.vscode/
+.idea/
+*~
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Package manager locks
+package-lock.json
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+scratch.txt
