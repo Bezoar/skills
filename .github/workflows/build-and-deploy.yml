@@ -1,0 +1,118 @@
+name: Build and Deploy Skills
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .skill files
+        run: ./build.sh
+
+      - name: Generate index page
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}"
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+
+          cat > dist/index.html << 'HEADER'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Claude Code Skills</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #e5e5e5; min-height: 100vh; padding: 2rem; }
+              .container { max-width: 720px; margin: 0 auto; }
+              h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff; }
+              .subtitle { color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
+              .subtitle a { color: #888; }
+              .skill { background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+              .skill-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+              .skill-name { font-size: 1.1rem; font-weight: 600; color: #fff; }
+              .skill-desc { color: #999; font-size: 0.85rem; line-height: 1.5; margin-bottom: 1rem; }
+              .install-row { display: flex; gap: 0.5rem; align-items: center; }
+              .install-cmd { flex: 1; background: #0d0d0d; border: 1px solid #333; border-radius: 6px; padding: 0.5rem 0.75rem; font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 0.8rem; color: #ccc; overflow-x: auto; white-space: nowrap; cursor: pointer; }
+              .install-cmd:hover { border-color: #555; }
+              .copy-btn, .dl-btn { background: #222; border: 1px solid #333; border-radius: 6px; padding: 0.5rem 0.75rem; color: #ccc; font-size: 0.8rem; cursor: pointer; white-space: nowrap; text-decoration: none; }
+              .copy-btn:hover, .dl-btn:hover { background: #2a2a2a; border-color: #555; color: #fff; }
+              .meta { color: #555; font-size: 0.75rem; margin-top: 2rem; text-align: center; }
+              .meta a { color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>Claude Code Skills</h1>
+              <p class="subtitle">Install with <code style="background:#161616;padding:2px 6px;border-radius:4px;">claude skill install &lt;url&gt;</code> &middot; <a href="REPO_URL_PLACEHOLDER">source</a></p>
+          HEADER
+
+          # Replace repo URL placeholder
+          sed -i "s|REPO_URL_PLACEHOLDER|${REPO_URL}|g" dist/index.html
+
+          # Generate a card for each .skill file
+          for skill_file in dist/*.skill; do
+            [ -f "$skill_file" ] || continue
+            filename="$(basename "$skill_file")"
+            skill_name="${filename%.skill}"
+
+            # Extract description from SKILL.md frontmatter inside the zip
+            desc="$(unzip -p "$skill_file" "*/SKILL.md" | sed -n '/^---$/,/^---$/p' | grep '^description:' | sed 's/^description: *"*//;s/"*$//' | head -c 200)"
+            [ -z "$desc" ] && desc="A Claude Code skill."
+
+            install_url="${PAGES_URL}/${filename}"
+
+            cat >> dist/index.html << SKILL_EOF
+              <div class="skill">
+                <div class="skill-header">
+                  <span class="skill-name">${skill_name}</span>
+                </div>
+                <div class="skill-desc">${desc}</div>
+                <div class="install-row">
+                  <div class="install-cmd" onclick="copyCmd(this)" title="Click to copy">claude skill install ${install_url}</div>
+                  <button class="copy-btn" onclick="copyCmd(this.previousElementSibling)">Copy</button>
+                  <a class="dl-btn" href="${filename}" download>Download</a>
+                </div>
+              </div>
+          SKILL_EOF
+          done
+
+          cat >> dist/index.html << FOOTER
+              <p class="meta">Built from <a href="${REPO_URL}/commit/${SHA}">${SHORT_SHA}</a></p>
+            </div>
+            <script>
+              function copyCmd(el) {
+                navigator.clipboard.writeText(el.textContent.trim());
+                const btn = el.nextElementSibling;
+                if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 1500); }
+              }
+            </script>
+          </body>
+          </html>
+          FOOTER
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
